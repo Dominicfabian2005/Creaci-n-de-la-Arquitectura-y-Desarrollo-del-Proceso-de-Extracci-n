@@ -1,0 +1,17 @@
+{
+  "database": {
+    "server": "localhost",
+    "name": "sistema_opiniones",
+    "user": "sa",
+    "password": ""
+  },
+  "sources": {
+    "csv_surveys": "surveys_part1.csv",
+    "csv_products": "products.csv",
+    "csv_web_reviews": "web_reviews.csv",
+    "csv_social": "social_comments.csv"
+  },
+  "api": {
+    "url": "https://jsonplaceholder.typicode.com/comments"
+  }
+}

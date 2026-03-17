@@ -1,0 +1,7 @@
+staging_encuestas.csv
+staging_resenas.csv
+staging_redes.csv
+
+# Python
+__pycache__/
+*.pyc
