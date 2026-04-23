@@ -16,9 +16,8 @@ conn = pyodbc.connect(
     "TrustServerCertificate=yes;",
     timeout=10
 )
-print("Conexión exitosa")
+logger.info(" Conexión exitosa a sistema_opiniones")
 cursor = conn.cursor()
-logger.info("Conexión exitosa a sistema_opiniones")
 
 try:
     # ─────────────────────────────────────────────
@@ -31,20 +30,25 @@ try:
 
     # ─────────────────────────────────────────────
     # DIM_PRODUCTO
+    # Columnas: id_producto(IDENTITY), nombre_producto, categoria, marca
     # ─────────────────────────────────────────────
     logger.info("Cargando dim_producto...")
     for _, row in products.iterrows():
         cursor.execute("""
-            IF NOT EXISTS (SELECT 1 FROM dim_producto WHERE id_producto = ?)
-            INSERT INTO dim_producto (id_producto, nombre_producto, categoria, marca)
-            VALUES (?, ?, ?, ?)
-        """, str(row["IdProducto"]), str(row["IdProducto"]),
-            str(row["Nombre"]), str(row.get("Categoría", "Sin Categoría")), "Sin Marca")
+            IF NOT EXISTS (SELECT 1 FROM dim_producto WHERE nombre_producto = ?)
+            INSERT INTO dim_producto (nombre_producto, categoria, marca)
+            VALUES (?, ?, ?)
+        """,
+        str(row["Nombre"]),
+        str(row["Nombre"]),
+        str(row.get("Categoría", "Sin Categoría")),
+        "Sin Marca")
     conn.commit()
-    logger.info("✅ dim_producto cargada")
+    logger.info(" dim_producto cargada")
 
     # ─────────────────────────────────────────────
     # DIM_CLIENTE
+    # Columnas: id_cliente(IDENTITY), nombre, pais, edad, tipo_cliente
     # ─────────────────────────────────────────────
     logger.info("Cargando dim_cliente...")
     clientes = set()
@@ -57,15 +61,21 @@ try:
 
     for id_c, tipo in clientes:
         cursor.execute("""
-            IF NOT EXISTS (SELECT 1 FROM dim_cliente WHERE id_cliente = ?)
-            INSERT INTO dim_cliente (id_cliente, nombre, pais, edad, tipo_cliente)
-            VALUES (?, ?, ?, ?, ?)
-        """, id_c, id_c, "Desconocido", "Desconocido", None, tipo)
+            IF NOT EXISTS (SELECT 1 FROM dim_cliente WHERE nombre = ?)
+            INSERT INTO dim_cliente (nombre, pais, edad, tipo_cliente)
+            VALUES (?, ?, ?, ?)
+        """,
+        id_c,
+        id_c,
+        "Desconocido",
+        "0",
+        tipo)
     conn.commit()
-    logger.info("✅ dim_cliente cargada")
+    logger.info(" dim_cliente cargada")
 
     # ─────────────────────────────────────────────
     # DIM_FECHA
+    # Columnas: id_fecha(IDENTITY), fecha, anio, mes, trimestre
     # ─────────────────────────────────────────────
     logger.info("Cargando dim_fecha...")
     fechas = set()
@@ -76,124 +86,144 @@ try:
     for fecha_str in sorted(fechas):
         try:
             f = pd.to_datetime(fecha_str[:10])
-            id_fecha = int(f.strftime("%Y%m%d"))
             trimestre = (f.month - 1) // 3 + 1
             cursor.execute("""
-                IF NOT EXISTS (SELECT 1 FROM dim_fecha WHERE id_fecha = ?)
-                INSERT INTO dim_fecha (id_fecha, fecha, anio, mes, trimestre)
-                VALUES (?, ?, ?, ?, ?)
-            """, id_fecha, id_fecha, f.date(), f.year, f.month, trimestre)
+                IF NOT EXISTS (SELECT 1 FROM dim_fecha WHERE fecha = ?)
+                INSERT INTO dim_fecha (fecha, anio, mes, trimestre)
+                VALUES (?, ?, ?, ?)
+            """,
+            f.date(),
+            f.date(),
+            f.year,
+            f.month,
+            trimestre)
         except Exception as e:
             logger.warning(f"Fecha inválida {fecha_str}: {e}")
     conn.commit()
-    logger.info("✅ dim_fecha cargada")
+    logger.info(" dim_fecha cargada")
 
     # ─────────────────────────────────────────────
     # DIM_FUENTE
+    # Columnas: id_fuente(IDENTITY), nombre_fuente
     # ─────────────────────────────────────────────
     logger.info("Cargando dim_fuente...")
-    fuentes = [("Encuestas Internas", "CSV"), ("Reseñas Web", "Web"),
-               ("Instagram", "Social"), ("Twitter", "Social"),
-               ("Redes Sociales", "Social"), ("API Externa", "API")]
-
-    for nombre, tipo in fuentes:
+    fuentes = [
+        "Encuestas Internas",
+        "Reseñas Web",
+        "Instagram",
+        "Twitter",
+        "Redes Sociales",
+        "API Externa"
+    ]
+    for nombre in fuentes:
         cursor.execute("""
             IF NOT EXISTS (SELECT 1 FROM dim_fuente WHERE nombre_fuente = ?)
-            INSERT INTO dim_fuente (nombre_fuente, tipo_fuente)
-            VALUES (?, ?)
-        """, nombre, nombre, tipo)
+            INSERT INTO dim_fuente (nombre_fuente)
+            VALUES (?)
+        """, nombre, nombre)
     conn.commit()
-    logger.info("✅ dim_fuente cargada")
+    logger.info(" dim_fuente cargada")
 
     # ─────────────────────────────────────────────
     # DIM_SENTIMIENTO
+    # Columnas: id_sentimiento(IDENTITY), tipo
     # ─────────────────────────────────────────────
     logger.info("Cargando dim_sentimiento...")
-    sentimientos_data = [
-        ("Positiva", "Positivo"), ("Negativa", "Negativo"),
-        ("Neutra", "Neutro"), ("Neutro", "Neutro"), ("Desconocido", "Neutro")
-    ]
-    sentimientos_csv = surveys["Clasificación"].dropna().unique().tolist()
-    for s in sentimientos_csv:
-        pol = "Positivo" if "pos" in s.lower() else "Negativo" if "neg" in s.lower() else "Neutro"
-        sentimientos_data.append((s, pol))
+    sentimientos = {"Positiva", "Negativa", "Neutra", "Neutro", "Desconocido"}
+    sentimientos.update(surveys["Clasificación"].dropna().unique().tolist())
 
-    for clasif, polaridad in sentimientos_data:
+    for tipo in sorted(sentimientos):
         cursor.execute("""
-            IF NOT EXISTS (SELECT 1 FROM dim_sentimiento WHERE clasificacion = ?)
-            INSERT INTO dim_sentimiento (clasificacion, polaridad)
-            VALUES (?, ?)
-        """, clasif, clasif, polaridad)
+            IF NOT EXISTS (SELECT 1 FROM dim_sentimiento WHERE tipo = ?)
+            INSERT INTO dim_sentimiento (tipo)
+            VALUES (?)
+        """, tipo, tipo)
     conn.commit()
-    logger.info("✅ dim_sentimiento cargada")
+    logger.info(" dim_sentimiento cargada")
 
     # ─────────────────────────────────────────────
-    # FACT_OPINION
+    # MAPAS DE LOOKUP PARA FACT_OPINION
     # ─────────────────────────────────────────────
-    logger.info("Cargando fact_opinion...")
-
-    # Mapas de lookup
-    cursor.execute("SELECT id_producto, id_producto FROM dim_producto")
+    cursor.execute("SELECT nombre_producto, id_producto FROM dim_producto")
     map_producto = {str(r[0]): r[1] for r in cursor.fetchall()}
 
-    cursor.execute("SELECT id_cliente, id_cliente FROM dim_cliente")
+    cursor.execute("SELECT nombre, id_cliente FROM dim_cliente")
     map_cliente = {str(r[0]): r[1] for r in cursor.fetchall()}
 
-    cursor.execute("SELECT id_fecha, id_fecha FROM dim_fecha")
-    map_fecha = {str(r[0]): r[1] for r in cursor.fetchall()}
+    cursor.execute("SELECT fecha, id_fecha FROM dim_fecha")
+    map_fecha = {str(r[0])[:10]: r[1] for r in cursor.fetchall()}
 
     cursor.execute("SELECT nombre_fuente, id_fuente FROM dim_fuente")
     map_fuente = {r[0]: r[1] for r in cursor.fetchall()}
 
-    cursor.execute("SELECT clasificacion, id_sentimiento FROM dim_sentimiento")
+    cursor.execute("SELECT tipo, id_sentimiento FROM dim_sentimiento")
     map_sentimiento = {r[0]: r[1] for r in cursor.fetchall()}
 
-    def get_id_fecha(fecha_str):
+    def safe_float(val):
         try:
-            return int(pd.to_datetime(str(fecha_str)[:10]).strftime("%Y%m%d"))
+            return float(val) if pd.notna(val) else None
         except:
             return None
 
+    # ─────────────────────────────────────────────
+    # FACT_OPINION
+    # Columnas: id_opinion(IDENTITY), id_producto, id_cliente,
+    #           id_fecha, id_fuente, id_sentimiento, calificacion, comentario
+    # ─────────────────────────────────────────────
+    logger.info("Cargando fact_opinion...")
     insertados = 0
+
     sql_fact = """
         INSERT INTO fact_opinion
             (id_producto, id_cliente, id_fecha, id_fuente, id_sentimiento, calificacion, comentario)
         VALUES (?,?,?,?,?,?,?)
     """
 
-    # Encuestas
+    # --- ENCUESTAS (surveys_part1.csv) ---
     for _, row in surveys.iterrows():
+        fecha = str(row.get("Fecha", ""))[:10]
+        nombre_prod = "Producto_" + str(row.get("IdProducto", ""))
         cursor.execute(sql_fact, (
-            map_producto.get(str(row["IdProducto"])),
-            map_cliente.get(str(row["IdCliente"])),
-            get_id_fecha(row["Fecha"]),
+            map_producto.get(nombre_prod),
+            map_cliente.get(str(row.get("IdCliente", ""))),
+            map_fecha.get(fecha),
             map_fuente.get("Encuestas Internas"),
-            map_sentimiento.get(str(row.get("Clasificación", "Neutro")), map_sentimiento.get("Neutro")),
-            float(row["PuntajeSatisfacción"]) if pd.notna(row.get("PuntajeSatisfacción")) else None,
+            map_sentimiento.get(str(row.get("Clasificación", "Neutro")),
+                                map_sentimiento.get("Neutro")),
+            safe_float(row.get("PuntajeSatisfacción")),
             str(row.get("Comentario", ""))
         ))
         insertados += 1
 
-    # Reseñas Web
+    # --- RESEÑAS WEB (web_reviews.csv) ---
     for _, row in reviews.iterrows():
+        fecha = str(row.get("Fecha", ""))[:10]
+        id_prod_raw = str(row.get("IdProducto", "")).replace("P0", "").replace("P", "")
+        nombre_prod = "Producto_" + id_prod_raw
         cursor.execute(sql_fact, (
-            map_producto.get(str(row["IdProducto"])),
-            map_cliente.get(str(row["IdCliente"])),
-            get_id_fecha(row["Fecha"]),
+            map_producto.get(nombre_prod),
+            map_cliente.get(str(row.get("IdCliente", ""))),
+            map_fecha.get(fecha),
             map_fuente.get("Reseñas Web"),
             map_sentimiento.get("Neutro"),
-            float(row["Rating"]) if pd.notna(row.get("Rating")) else None,
+            safe_float(row.get("Rating")),
             str(row.get("Comentario", ""))
         ))
         insertados += 1
 
-    # Comentarios Sociales
+    # --- COMENTARIOS SOCIALES (social_comments.csv) ---
     for _, row in social.iterrows():
+        fecha = str(row.get("Fecha", ""))[:10]
+        id_prod_raw = str(row.get("IdProducto", "")).replace("P0", "").replace("P", "")
+        nombre_prod = "Producto_" + id_prod_raw
         fuente_src = str(row.get("Fuente", "Redes Sociales"))
+        id_c = str(row.get("IdCliente", "Anónimo"))
+        if id_c == "nan":
+            id_c = "Anónimo"
         cursor.execute(sql_fact, (
-            map_producto.get(str(row["IdProducto"])),
-            map_cliente.get(str(row.get("IdCliente", "Anónimo"))),
-            get_id_fecha(row["Fecha"]),
+            map_producto.get(nombre_prod),
+            map_cliente.get(id_c),
+            map_fecha.get(fecha),
             map_fuente.get(fuente_src, map_fuente.get("Redes Sociales")),
             map_sentimiento.get("Neutro"),
             None,
@@ -202,11 +232,13 @@ try:
         insertados += 1
 
     conn.commit()
-    logger.info(f"✅ fact_opinion cargada: {insertados} registros")
+    logger.info(f" fact_opinion cargada: {insertados} registros")
 
     # ─────────────────────────────────────────────
-    # RESUMEN
+    # RESUMEN FINAL
     # ─────────────────────────────────────────────
+    logger.info("=" * 50)
+    logger.info("RESUMEN DEL DATAWAREHOUSE")
     logger.info("=" * 50)
     for tabla in ["dim_producto", "dim_cliente", "dim_fecha", "dim_fuente", "dim_sentimiento", "fact_opinion"]:
         cursor.execute(f"SELECT COUNT(*) FROM {tabla}")
@@ -215,7 +247,7 @@ try:
     logger.info("=" * 50)
 
 except Exception as e:
-    logger.error(f"❌ ERROR: {e}")
+    logger.error(f" ERROR: {e}")
     conn.rollback()
     raise
 finally:
